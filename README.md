@@ -18,3 +18,7 @@ https://github.com/JackallDigital/Interactive-controlled-games/assets/130217068/
 
 The third game is a two person dual pong game which detects both left and right hand of each person, which works.. kind of. Look at the code for more information
 https://github.com/JackallDigital/Interactive-controlled-games/assets/130217068/d4e96087-0710-4eaf-ac2e-12d6a4b229e4
+
+
+AND you can learn how I've done the button interactions and see the Left/Right (open golden) hand in action in this video
+https://www.youtube.com/watch?v=ZB_DGKb8ylI
