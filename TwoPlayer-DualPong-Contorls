@@ -1,0 +1,178 @@
+/*
+This two player dual pong game was my 3rd game I added in a multi game wall projection interaction project.
+
+The idea for the game was for each person controlling 2 platforms instead of one, since we use Nuitrack API
+so we can do something new instead of the regular pong!
+
+The game works fine for 1 person, but I wanted to make this for 2 people AND I wanted to make it so if there
+is only 1 person playing or no one then the 'AI' takes over the uncontrolled side until the game is over.
+
+So it also works for 2 people, but when the people change (if for instance you have lots of visitors) then the
+new players are not recognised. This is just one of those things that you can't test alone and at the moment
+I do not know if ControllerUser.ID needs to be reset in some way or if something else would have to be done.
+
+IF ANYONE HAS ANY IDEA IT WOULD BE MUCH APPRECIATED!
+
+Similar to the endless running game I added all of the game object that control the platforms in the Unity hierarchy
+and disabled/enabled them when appropriate (most of the time, read described issue above).
+
+The movement is done with the hand and the arms should be extended infront of the person but the elbows can be bent a bit.
+This though probably depends on the person height as I couldn't test with very tall people or children. The person then
+moves the hand up or down a bit and the platform will move in the up/down direction.
+
+The player platform prefab was done in the same way as the breakout game player paddle, the difference being this script also
+has a user id so the left player has a user ID of 0 and the right one a user ID of 1.
+/*
+
+
+using NuitrackSDK;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+public class PlayerPongPlatforme : TrackedUser
+{
+    public nuitrack.JointType[] typeJoint;
+    GameObject[] CreatedJoint;
+    public GameObject PrefabJoint;
+
+    //Movement Limit
+    private float setEdgePlatformXposition = 51; //the platform at the edge of the screen has a set X position
+    //private float playerSkeletonPositionReference = 0.5f; //we could set the player position based on their waist pos, but we can just hardcode the value for the left/right player
+    private float setMidPlatformXposition = 30; //set the middle platform limit to 30 on x axis
+    private float limitPlatformYmovement = 20; //set the limit on y axis for all platforms
+
+    private bool changedPlayerOneStartPlatformSize = false; //for player 1 bool indicator to destroy the middle platform's cubes to make it shorter
+    private bool changedPlayerTwoStartPlatformSize = false; //for player 2 bool indicator to destroy the middle platform's cubes to make it shorter
+
+    private float _cameraRotationOffset = 0.5f; //set to -0.2f if camera is in normal orientation and 0.5f if it is upside down, these values could also be different depending on your camera position, orientation and your scene setup
+
+    void Start()
+    {
+        CreatedJoint = new GameObject[typeJoint.Length];
+        for (int q = 0; q < typeJoint.Length; q++)
+        {
+            CreatedJoint[q] = Instantiate(PrefabJoint);
+            CreatedJoint[q].transform.SetParent(transform);
+            CreatedJoint[q].transform.localPosition = new Vector3(0, 200, 0);
+        }
+        CreatedJoint[2].SetActive(false); //disable the waist prefab but use the X axis vlue to determine which human is controlling the left or right player by using the skeleton reference position
+    }
+
+    void Update()
+    {
+        if (NuitrackManager.Users.Current != null && ControllerUser.Skeleton != null) {
+            if (!changedPlayerTwoStartPlatformSize) {
+                if (ControllerUser.ID == 2) { 
+                    CreatedJoint[0].transform.localScale = new Vector3(100f, 80f, 100f);
+                }
+                changedPlayerTwoStartPlatformSize = true;
+            }
+
+            if (!changedPlayerOneStartPlatformSize) {
+                if (ControllerUser.ID == 1) { 
+                    CreatedJoint[1].transform.localScale = new Vector3(100f, 80f, 100f);
+                }
+                changedPlayerOneStartPlatformSize = true;
+            }
+
+            for (int q = 0; q < typeJoint.Length; q++) {
+                UserData.SkeletonData.Joint joint = ControllerUser.Skeleton.GetJoint(typeJoint[q]);
+
+                if(ControllerUser.ID == 1) {
+                    if (q != 2) //if not waist, meaning it's the hands, move the joints up and down
+                        transform.GetChild(q).Translate(0, 3f * (joint.Position.y + _cameraRotationOffset), 0, Space.World);
+                    else
+                        CreatedJoint[q].transform.localPosition = new Vector3(joint.Position.x, 0, 0);
+
+                    if (q == 0) { //edge platform
+                        if (transform.GetChild(q).position.y <= -limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(-setEdgePlatformXposition, -limitPlatformYmovement, 340);
+                        }
+                        if (transform.GetChild(q).position.y >= limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(-setEdgePlatformXposition, limitPlatformYmovement, 340);
+                        }
+                    }
+                    if (q == 1) { //mid platform
+                        if (transform.GetChild(q).position.y <= -limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(-setMidPlatformXposition, -limitPlatformYmovement, 340);
+                        }
+                        if (transform.GetChild(q).position.y >= limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(-setMidPlatformXposition, limitPlatformYmovement, 340);
+                        }
+                    }
+                }
+                else if (ControllerUser.ID == 2) {
+                    if (q != 2) //check if it's not waist
+                        transform.GetChild(q).Translate(0, 3f * (joint.Position.y + _cameraRotationOffset), 0, Space.World);
+                    else
+                        CreatedJoint[q].transform.localPosition = new Vector3(joint.Position.x, 0, 0);
+
+                    if (q == 1) { //edge platform
+                        if (transform.GetChild(q).position.y <= -limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(setEdgePlatformXposition, -limitPlatformYmovement, 340);
+                        }
+                        if (transform.GetChild(q).position.y >= limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(setEdgePlatformXposition, limitPlatformYmovement, 340);
+                        }
+                    }
+                    if (q == 0) { //mid platform
+                        if (transform.GetChild(q).position.y <= -limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(setMidPlatformXposition, -limitPlatformYmovement, 340);
+                        }
+                        if (transform.GetChild(q).position.y >= limitPlatformYmovement) {
+                            transform.GetChild(q).position = new Vector3(setMidPlatformXposition, limitPlatformYmovement, 340);
+                        }
+                    }
+                }
+            }
+            //simple AI that turns on/off appropriately if there are 1 or two humans playing
+            /*
+            This detects how many people are detected but when people change and there are still only 2 people infront of the
+            camera this breaks down. So perhaps this counts how many people were detected in total in which case a different
+            condition needs to be used.
+            */
+            if (NuitrackManager.Users.Count == 2) { 
+                GameObject.Find("PlayerLeft").transform.GetChild(0).gameObject.SetActive(true);
+                GameObject.Find("PlayerLeft").transform.GetChild(1).gameObject.SetActive(true);
+                GameObject.Find("PlayerRight").transform.GetChild(0).gameObject.SetActive(true);
+                GameObject.Find("PlayerRight").transform.GetChild(1).gameObject.SetActive(true);
+                GameObject.Find("AI1").transform.GetChild(0).gameObject.SetActive(false); //AI1 is when there i no left player and AI is when there is no right player
+                GameObject.Find("AI1").transform.GetChild(1).gameObject.SetActive(false);
+                GameObject.Find("AI").transform.GetChild(0).gameObject.SetActive(false);
+                GameObject.Find("AI").transform.GetChild(1).gameObject.SetActive(false);
+            }
+            else if (NuitrackManager.Users.Count == 1) {
+                if (ControllerUser.ID == 1) {
+                    GameObject.Find("PlayerLeft").transform.GetChild(0).gameObject.SetActive(true);
+                    GameObject.Find("PlayerLeft").transform.GetChild(1).gameObject.SetActive(true);
+                    GameObject.Find("PlayerRight").transform.GetChild(0).gameObject.SetActive(false);
+                    GameObject.Find("PlayerRight").transform.GetChild(1).gameObject.SetActive(false);
+                    GameObject.Find("AI1").transform.GetChild(0).gameObject.SetActive(false);
+                    GameObject.Find("AI1").transform.GetChild(1).gameObject.SetActive(false);
+                    GameObject.Find("AI").transform.GetChild(0).gameObject.SetActive(true);
+                    GameObject.Find("AI").transform.GetChild(1).gameObject.SetActive(true);
+                }
+                else if (ControllerUser.ID == 2) {
+                    GameObject.Find("PlayerLeft").transform.GetChild(0).gameObject.SetActive(false);
+                    GameObject.Find("PlayerLeft").transform.GetChild(1).gameObject.SetActive(false);
+                    GameObject.Find("PlayerRight").transform.GetChild(0).gameObject.SetActive(true);
+                    GameObject.Find("PlayerRight").transform.GetChild(1).gameObject.SetActive(true);
+                    GameObject.Find("AI1").transform.GetChild(0).gameObject.SetActive(true);
+                    GameObject.Find("AI1").transform.GetChild(1).gameObject.SetActive(true);
+                    GameObject.Find("AI").transform.GetChild(0).gameObject.SetActive(false);
+                    GameObject.Find("AI").transform.GetChild(1).gameObject.SetActive(false);
+                }
+            }        
+        }
+        else{
+            GameObject.Find("PlayerLeft").transform.GetChild(0).gameObject.SetActive(false);
+            GameObject.Find("PlayerLeft").transform.GetChild(1).gameObject.SetActive(false);
+            GameObject.Find("PlayerRight").transform.GetChild(0).gameObject.SetActive(false);
+            GameObject.Find("PlayerRight").transform.GetChild(1).gameObject.SetActive(false);
+            GameObject.Find("AI").transform.GetChild(0).gameObject.SetActive(true);
+            GameObject.Find("AI").transform.GetChild(1).gameObject.SetActive(true);
+            GameObject.Find("AI1").transform.GetChild(0).gameObject.SetActive(true);
+            GameObject.Find("AI1").transform.GetChild(1).gameObject.SetActive(true);
+        }
+    }
+}
