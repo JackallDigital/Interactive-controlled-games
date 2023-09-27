@@ -1,0 +1,296 @@
+/*
+This is the second game I did for the project, an endless runner where a person controls a NAO robot and they can move left/right,
+squat a bit to do a low roll under an obstacle or jump a bit to jump over obstacles. Using Nuitrack API to achieve the movement.
+
+The movement implementation is a bit different as in this case we control an animatable character. This time I made an empty object
+called Player and attached this PlayerMove script to it. In the hierarchy inside the Player I added the robot which we control
+(it has an animator and all the animations) and I also added a camera that follows the robot. In the inspector(with Player selected)
+as the Player Object I added our robot and as for the Prefab Joint I used a new sphere prefab and disabled its mesh, so it is not visible.
+
+I intended to make this game for 1/2/3 people but as I couldn't test it on my own I commented that part out.
+
+Can the movement be done differently? Absolutely. But the way I've done it you have to have a ski like pose and just lean to left/right side.
+*/
+
+
+using NuitrackSDK;
+using NuitrackSDK.Avatar;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PlayerMove : TrackedUser
+{
+    [SerializeField] float moveSpeed = 2f;
+    [SerializeField] float turnSpeed = 0.25f;
+
+    private AudioSource playerAudio;
+    [SerializeField] AudioClip obstacleHitSound;
+    [SerializeField] AudioClip pickUpCoinSound;
+    [SerializeField] AudioClip jumpSound;
+    [SerializeField] AudioClip rollSound;
+
+    //Animator animator; //if we needed to attach an animator to a an object that has a 3D character player model (ie. we use empty an player object in which we put a prefab 3D model)
+
+    public static bool canMove = false; //we can use this for the menu screen to determine the number of players and also so the character runs in place
+    public bool isJumping = false;
+    public bool comingDown = false;
+    public bool isRolling = false;
+    public bool hitObstacle = false;
+
+    public GameObject playerObject; //reference to the player so we can play the animations
+
+    public nuitrack.JointType[] typeJoint;
+    GameObject[] CreatedJoint;
+    public GameObject PrefabJoint;
+
+    private float setMovementInY = 0.32f; //position and limit the player model so it moves on the ground (this will depend on your model and scene setup)
+
+    private float startYaxisPosition;
+    private float startXaxisPosition; //we can use the startXaxisPosition instead of the hardcoded values for player movement - but this means the players can't move from the initial position they were detected at
+    private bool userDetected = false;
+    private bool speedUP = false;
+
+    private int coinsPickedUp = 0;
+
+    private BoxCollider playerBoxCollider;
+
+    private int _numberOfPlayers;
+
+    //private bool animatorLoaded = false;
+    //public RuntimeAnimatorController animatorLili;
+
+    void Start() {
+        CreatedJoint = new GameObject[typeJoint.Length];
+        for (int q = 0; q < typeJoint.Length; q++){
+            CreatedJoint[q] = Instantiate(PrefabJoint);
+            CreatedJoint[q].transform.SetParent(transform);
+            CreatedJoint[q].transform.localScale = new Vector3(0.55f, 0.275f, 0.55f);
+            CreatedJoint[q].transform.localPosition = new Vector3(0, 0, 0);
+        }
+
+        //get number of players based on active hierarchy player elements, inside the Player we have "Lili - Violet" prefab 3D character model
+        for(int i=0; i<transform.childCount; i++) {
+            if (transform.GetChild(i).name.Equals("Lili - Violet"))
+                _numberOfPlayers++;
+        }
+        playerBoxCollider = GetComponent<BoxCollider>();
+        playerAudio = GetComponent<AudioSource>();
+        //_numberOfPlayers = GameObject.Find("Sphere(Clone)"); //since I used a Sphere prefab as the joint that controls the movement
+        // animator = GameObject.Find("Lili - Violet(Clone)").GetComponent<Animator>();
+    }
+
+    // Update is called once per frame
+    void Update() {
+        if (canMove) {
+            if (!hitObstacle) //if we didn't hit an obstacle we run forward
+                transform.Translate(Vector3.forward * moveSpeed * Time.deltaTime, Space.World);
+
+            //   if(!animatorLoaded)
+            //    {
+            //       animator.runtimeAnimatorController = animatorLili;//Resources.Load("Assets/Characters/Lili") as RuntimeAnimatorController;
+            //       animatorLoaded = true;
+            //       Debug.Log("loaded");
+            //   }
+
+            if (transform.position.z > 0) {
+                GameManagerDDTrun.Instance.Distance = (int)transform.position.z;
+                GameManagerDDTrun.Instance.Score = (int)transform.position.z*(int)moveSpeed + coinsPickedUp*20;
+                if ((int)transform.position.z%60 == 0 && !speedUP) { //set the modulo value to the number of meters you want the player to run before the speed changes
+                    StartCoroutine(IncreasePlayerSpeed());
+                }
+            }
+            /*
+            //this is the movement you could do with WASD, Arrows and Space key
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
+            {
+            if (transform.position.x > LevelBoundry.leftSide)
+                    transform.Translate(Vector3.left * turnSpeed * 20 * Time.deltaTime);
+            }
+            else if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
+            {
+            if (transform.position.x < LevelBoundry.rightSide)
+                    transform.Translate(Vector3.right * turnSpeed * 20 * Time.deltaTime);
+            }
+            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.Space))
+            {
+                if (!isJumping && !isRolling)
+                {
+                    isJumping = true;
+                    StartCoroutine(JumpRollSequence());
+                    playerBoxCollider.center = new Vector3(0, 1, 0.12f);
+                    playerObject.GetComponent<Animator>().Play("Running Forward Flip");
+                }
+            }
+            if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftControl))
+            {
+                if (!isRolling && !isJumping)
+                {
+                    isRolling = true;
+                    StartCoroutine(JumpRollSequence());
+                    playerBoxCollider.center = new Vector3(0, 0, 0.12f);
+                    playerObject.GetComponent<Animator>().Play("Sprinting Forward Roll");
+                }
+            }
+            */
+
+            if (NuitrackManager.Users.Current != null && ControllerUser.Skeleton != null) {
+                for (int q = 0; q < typeJoint.Length; q++) {
+                    UserData.SkeletonData.Joint joint = ControllerUser.Skeleton.GetJoint(typeJoint[q]);
+                    if (!userDetected) {
+                        userDetected = true;
+                        startYaxisPosition = joint.Position.y;
+                        //startXaxisPosition = joint.Position.x;
+                    }  
+                    //PLAYER CONTROLS
+                    //Controls for multiple people have not been tested
+                    //single player control, or 3 players 2nd player control (2nd player would be in the center of the camera, like one player is)
+                    if (_numberOfPlayers == 1) { //((ControllerUser.ID == 1 && _numberOfPlayers == 1) || (ControllerUser.ID == 2 && _numberOfPlayers == 3)) {
+                        //we can move left/right only when we are inside the LevelBoundry values
+                        if (transform.position.x >= LevelBoundry.leftSide && transform.position.x <= LevelBoundry.rightSide) {
+                            if (joint.Position.x <= 0.0f) { //move based on hard coded value from -1f to 1f depending on room size, camera position, number of people (up to 3) and their relative position) camera center is 0.0f
+                                transform.Translate(turnSpeed * -joint.Position.x, 0, 0, Space.World);
+                            }
+                            else {
+                                transform.Translate(-turnSpeed * joint.Position.x, 0, 0, Space.World);
+                            }
+                        }
+                    }
+                    //two player controls
+                    /*
+                    else if (_numberOfPlayers == 2) {
+                        if (ControllerUser.ID == 1) {
+                            //we can move left/right only when we are inside the LevelBoundry values
+                            if (transform.position.x >= LevelBoundry.leftSide && transform.position.x <= LevelBoundry.rightSide) {
+                                if (joint.Position.x < 0.3f) { //move based on hard coded value from -1f to 1f depending on room size, camera position, number of people (up to 3) and their relative position) camera center is 0.0f
+                                    transform.Translate(turnSpeed * -joint.Position.x, 0, 0, Space.World);
+                                }
+                                else {
+                                    transform.Translate(-turnSpeed * joint.Position.x, 0, 0, Space.World);
+                                }
+                            }
+                        }
+                        else if (ControllerUser.ID == 2) {
+                            if (transform.position.x >= LevelBoundry.leftSide && transform.position.x <= LevelBoundry.rightSide) {
+                                if (joint.Position.x > -0.3f) { //move based on hard coded value from -1f to 1f depending on room size, camera position, number of people (up to 3) and their relative position) camera center is 0.0f
+                                    transform.Translate(turnSpeed * -joint.Position.x, 0, 0, Space.World);
+                                }
+                                else {
+                                    transform.Translate(-turnSpeed * joint.Position.x, 0, 0, Space.World);
+                                }
+                            }
+                        }
+                    }
+                    */
+                    //three player controls
+                    /*
+                    else if (_numberOfPlayers == 3) {
+                        if (ControllerUser.ID == 1) {
+                            //we can move left/right only when we are inside the LevelBoundry values
+                            if (transform.position.x >= LevelBoundry.leftSide && transform.position.x <= LevelBoundry.rightSide) {
+                                if (joint.Position.x < 0.5f) { //move based on hard coded value from -1f to 1f depending on room size, camera position, number of people (up to 3) and their relative position) camera center is 0.0f
+                                    transform.Translate(turnSpeed * -joint.Position.x, 0, 0, Space.World);
+                                }
+                                else {
+                                    transform.Translate(-turnSpeed * joint.Position.x, 0, 0, Space.World);
+                                }
+                            }
+                        }
+                        else if (ControllerUser.ID == 3) {
+                            if (transform.position.x >= LevelBoundry.leftSide && transform.position.x <= LevelBoundry.rightSide) {
+                                if (joint.Position.x > -0.5f) { //move based on hard coded value from -1f to 1f depending on room size, camera position, number of people (up to 3) and their relative position) camera center is 0.0f
+                                    transform.Translate(turnSpeed * -joint.Position.x, 0, 0, Space.World);
+                                }
+                                else {
+                                    transform.Translate(-turnSpeed * joint.Position.x, 0, 0, Space.World);
+                                }
+                            }
+                        }
+                    }
+                    */
+                    //LIMIT LEFT / RIGHT MOVEMENT
+                    //if we overshoot the left boundry set the value to LeftBoundry value
+                    if (transform.position.x <= LevelBoundry.leftSide) {
+                        transform.position = new Vector3(LevelBoundry.leftSide, setMovementInY, transform.position.z);
+                    }
+                    //if we overshoot the right boundry set the value to RightBoundry value
+                    if (transform.position.x >= LevelBoundry.rightSide) {
+                        transform.position = new Vector3(LevelBoundry.rightSide, setMovementInY, transform.position.z);
+                    }
+                    //JUMP / ROLL DETECTION
+                    //Jumping implementation. Torso (joint) needs to make a difference of 0.2f to be detected as a jump. Also prevent rolling during a jump
+                    if (joint.Position.y - startYaxisPosition > 0.2f && !isJumping) {
+                        if (!isJumping && !isRolling) {
+                            isJumping = true;
+                            playerObject.GetComponent<Animator>().Play("Running Forward Flip");
+                            playerBoxCollider.center = new Vector3(0, 1, 0.12f);
+                            playerAudio.PlayOneShot(jumpSound, 1.0f);
+                            StartCoroutine(JumpRollSequence());
+                        }
+                    }
+                    //Rolling/crouching implementation. Torso (joint) needs to make a difference of negative 0.2f to be detected as a roll/crouch. Also prevent jumping during a roll
+                    if (joint.Position.y - startYaxisPosition < -0.2f && !isRolling) {
+                        if (!isJumping && !isRolling) {
+                            isRolling = true;
+                            playerObject.GetComponent<Animator>().Play("Sprinting Forward Roll");
+                            playerBoxCollider.center = new Vector3(0, 0, 0.12f);
+                            playerAudio.PlayOneShot(rollSound, 1.0f);
+                            StartCoroutine(JumpRollSequence());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private void OnTriggerEnter(Collider other) {
+        if (other.CompareTag("Obstacle")) {
+            playerAudio.PlayOneShot(obstacleHitSound, 1.0f);
+            Destroy(other.gameObject);
+            hitObstacle = true;
+            canMove = false;
+            StartCoroutine(HitObstacleSequence());
+        }
+        if (other.CompareTag("Coin")) {
+            playerAudio.PlayOneShot(pickUpCoinSound, 1.0f);
+            coinsPickedUp++;
+            Destroy(other.gameObject);
+        }
+    }
+
+    IEnumerator IncreasePlayerSpeed() {
+        speedUP = true;
+        moveSpeed += 0.5f;
+        playerObject.GetComponent<Animator>().speed+=0.025f;
+        yield return new WaitForSeconds(1);
+        speedUP = false;
+    }
+
+    IEnumerator JumpRollSequence() {
+        yield return new WaitForSeconds(0.45f / playerObject.GetComponent<Animator>().speed); //we do the division with the animation speed so the run animation starts playing again accordingly based on the run speed
+        comingDown = true;
+        yield return new WaitForSeconds(0.45f / playerObject.GetComponent<Animator>().speed); //we do the division with the animation speed so the run animation starts playing again accordingly based on the run speed
+        playerBoxCollider.center = new Vector3(0, 0.5f, 0.12f);
+        isJumping = false;
+        isRolling = false;
+        comingDown = false;
+
+        if(!playerObject.GetComponent<Animator>().GetBool("hasHitObstacle"))
+            playerObject.GetComponent<Animator>().Play("Slow Run");
+    }
+
+    IEnumerator HitObstacleSequence() {
+        playerObject.GetComponent<Animator>().SetBool("hasHitObstacle", true);
+        playerObject.GetComponent<Animator>().Play("Stumble Backwards");
+        yield return new WaitForSeconds(3f);
+        GameManagerDDTrun.Instance.Life -= 1;
+        if (GameManagerDDTrun.Instance.Life == 0) {
+            transform.position = new Vector3(0, setMovementInY, -7.5f);
+            moveSpeed = 2f;
+            coinsPickedUp = 0;
+        }
+        hitObstacle = false;
+        canMove = true;
+        playerObject.GetComponent<Animator>().SetBool("hasHitObstacle", false);
+        playerObject.GetComponent<Animator>().Play("Slow Run");
+    }
+}
