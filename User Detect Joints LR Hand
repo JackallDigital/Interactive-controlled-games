@@ -1,0 +1,53 @@
+/*
+This is the base detect user joints script that is provided by Nuitrack API
+I have made some adjustments so that we can use a hand with fingers as a left/right hand joint
+But since by default all the joints face the same orientation I have adjusted the local scale to switch one of the hand around
+
+As you will see in the code I also have a HandSelectedPrefab that I didn't implement. The idea was that when a person interacts with a game object
+the open palm hand that is interacting would switch to the prefab with the closed palm hand. However, for this to work the hand game objects would
+have to be separated. Because if you use both hands in one player object (as I did), then when you switch a prefab joint both hands
+will have the same prefab. Which means that if the left hand is selecting something then the right hand will also switch to the selected hand prefab
+even though it is not selecting anything.
+*/
+
+using UnityEngine;
+using NuitrackSDK;
+//using static UnityEditor.PlayerSettings;
+
+//MAIN MENU TYPE PLAYER CONTROLS WHERE WE NEED LEFT AND RIGHT HANDS - this should serve as a BASE for other interactions hence commented code is left in
+
+public class DetectUserJoints : MonoBehaviour
+{
+    public nuitrack.JointType[] typeJoint;
+    GameObject[] CreatedJoint;
+    public GameObject HandPrefabJoint;
+    public GameObject HandSelectedPrefabJoint;
+    
+    void Start()
+    {
+        CreatedJoint = new GameObject[typeJoint.Length];
+        for (int q = 0; q < typeJoint.Length; q++)
+        {
+            CreatedJoint[q] = Instantiate(HandPrefabJoint);
+            //I changed the scale of the LeftHand game object on the X axis to a negative value to flip it around, otherwise I would have 2 right hands
+            if (typeJoint[q].ToString() == "LeftHand")
+            {
+                CreatedJoint[q].transform.localScale = new Vector3(-0.05f, 0.05f, 0.05f);
+            }
+            CreatedJoint[q].transform.SetParent(transform);
+        }
+    }
+
+
+    void Update() {
+        if (NuitrackManager.Users.Current != null && NuitrackManager.Users.Current.Skeleton != null) {
+            for (int q = 0; q < typeJoint.Length; q++) {
+                UserData.SkeletonData.Joint joint = NuitrackManager.Users.Current.Skeleton.GetJoint(typeJoint[q]);
+                CreatedJoint[q].transform.localPosition = joint.Position;
+            }
+        }
+        else {
+            return;
+        }
+    }
+}
