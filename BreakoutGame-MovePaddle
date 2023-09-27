@@ -1,0 +1,59 @@
+/*
+Since this project was done for a client I can not the whole code but I can show how I have implemented the
+body controls using the Nuitrack API.
+
+This PlayerPaddle script was applied to an empty object. Since Nuitrack uses prefabs to display joints I used
+a pickaxe as a prefab joint. And in the Unity inspector I set the waist to be the joint that will control
+the pickaxe. Once this was done I made the empty object, that includes the script, into a player prefab as
+I instantiate the player prefab only when the user starts the game.
+
+This is the code I used to implement the movement of the paddle that the player controls by using the Nuitrack API.
+Some of the values are hard coded based on the actual location where the game/interaction was set-up so the values
+could be changed based on the space size that you might have available. Also, in the NuitrackScript the camera
+was set to be orientated as upside down, so 180 degrees, as the phisical camera was rotated upside down.
+
+The game is for 1 human only, but people can change while the game is running.
+*/
+
+using NuitrackSDK;
+using UnityEngine;
+
+public class PlayerPaddle : MonoBehaviour {
+    public nuitrack.JointType[] typeJoint;
+    GameObject[] CreatedJoint;
+    public GameObject PrefabJoint;
+
+    private float limitMovementInX = 41; //41 is the max allowed distance that the paddle can travel on the X axis
+    private float setMovementInY = -26;
+    private float tempPosition = 0;
+
+    void Start() {
+        CreatedJoint = new GameObject[typeJoint.Length];
+
+        for (int q = 0; q < typeJoint.Length; q++) {
+            CreatedJoint[q] = Instantiate(PrefabJoint);
+            CreatedJoint[q].transform.SetParent(transform);
+            CreatedJoint[q].transform.localPosition = new Vector3(0, setMovementInY, 0);
+            //CreatedJoint[q].transform.localScale = new Vector3(4f, 2f, 1f); //the paddle size could be adjusted at this point and in this way if you had some power-up to increase/decrease the paddle size
+        }
+    }
+
+    void Update() {
+        if (NuitrackManager.Users.Current != null && NuitrackManager.Users.Current.Skeleton != null) {
+            for (int q = 0; q < typeJoint.Length; q++) {
+                UserData.SkeletonData.Joint joint = NuitrackManager.Users.Current.Skeleton.GetJoint(typeJoint[q]);
+
+                tempPosition = joint.Position.x * limitMovementInX * 1.5f;  //multiply the temporary movement position by 1.5f. This will speed up the paddle and also make it so the player doesn't have to move as much
+
+                if (tempPosition < -limitMovementInX) {
+                    CreatedJoint[q].transform.localPosition = new Vector3(-limitMovementInX, setMovementInY, 0);
+                }
+                else if (tempPosition > limitMovementInX) {
+                    CreatedJoint[q].transform.localPosition = new Vector3(limitMovementInX, setMovementInY, 0);
+                }
+                else
+                    CreatedJoint[q].transform.localPosition = new Vector3(tempPosition, setMovementInY, 0);
+            }
+        }
+    }
+}
